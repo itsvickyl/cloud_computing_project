@@ -1,0 +1,112 @@
+name: Deploy docker container to ECR and Run in EC2
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+    paths:
+      - "backend/**"
+
+env:
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME }}
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build_and_push:
+    if: github.event.pull_request.merged == true
+    name: Build the project and Push to ECR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Setup pnpm Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('backend/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Building Tag, and Push image to ECR
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f backend/Dockerfile .
+
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+  deploy_to_ec2:
+    name: Pull from EC2 and Run on EC2
+    needs: build_and_push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install SSH Key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_PRIVATE_KEY }}
+
+      - name: Configure SSH known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Create env file
+        run: |
+          echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
+          echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
+          echo "DB_USERNAME=${{ secrets.DB_USERNAME }}" >> .env
+          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
+          echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
+          echo "OAUTH_GOOGLE_ID=${{ secrets.OAUTH_GOOGLE_ID }}" >> .env
+          echo "OAUTH_GOOGLE_SECRET=${{ secrets.OAUTH_GOOGLE_SECRET }}" >> .env
+          echo "OAUTH_GOOGLE_CALLBACK_URL=${{ secrets.OAUTH_GOOGLE_CALLBACK_URL }}" >> .env
+          echo "OAUTH_GOOGLE_SECRET=${{ secrets.OAUTH_GOOGLE_SECRET }}" >> .env
+          echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
+          echo "DOMAIN=${{ secrets.DOMAIN }}" >> .env
+          echo "AWS_BUCKET_NAME=${{ secrets.AWS_BUCKET_NAME }}" >> .env
+          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> .env
+          echo "AWS_ACCESS_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> .env
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
+          echo "CLIENT_URL=${{ secrets.CLIENT_URL }}" >> .env
+          echo "CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}" >> .env
+          echo "COOKIE_NAME=${{ secrets.COOKIE_NAME }}" >> .env
+
+      - name: Copy env file to EC2
+        run: scp -o StrictHostKeyChecking=no .env ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }}:/tmp/.env
+
+      - name: Pull and Deploy container on EC2
+        run: |
+          SSH_HOST="${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }}"
+          ECR_URI="$ECR_REGISTRY/$ECR_REPOSITORY:latest"
+          CONTAINER_NAME="kaamAI-server"
+
+          TOKEN=$(ssh $SSH_HOST "bash -l -c 'aws ecr get-login-password --region ${{ secrets.AWS_REGION }}'")
+          ssh "$SSH_HOST" "echo $TOKEN | docker login --username AWS --password-stdin $ECR_REGISTRY"
+
+          ssh "$SSH_HOST" "docker stop $CONTAINER_NAME || true"
+          ssh "$SSH_HOST" "docker rm $CONTAINER_NAME || true"
+
+          ssh "$SSH_HOST" "docker pull $ECR_URI"
+
+          ssh "$SSH_HOST" "docker run -d --restart always --name $CONTAINER_NAME -p 5000:5000 -e PORT=5000 --env-file /tmp/.env $ECR_URI"
+        env:
+          AWS_REGIONS: ${{ secrets.AWS_REGION }}

@@ -1,0 +1,11 @@
+*.zip
+
+__pycache__/
+
+model/pdf-processing/*
+model/screening/*
+
+!model/**/lambda_function.py
+
+!model/screening/vectorize.py
+!model/screening/data_cleaning.py
