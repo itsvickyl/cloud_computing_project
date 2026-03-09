@@ -1,0 +1,309 @@
+# ==============================================================================
+# TalentScope — AWS CloudFormation Template
+# ==============================================================================
+#
+# PURPOSE:
+#   CloudFormation equivalent of main.tf — defines the same AWS resources
+#   (S3, Lambda, DynamoDB, IAM) using AWS's native IaC service.
+#
+# WHEN TO USE CLOUDFORMATION VS. TERRAFORM:
+#   - CloudFormation: AWS-only projects, teams already using AWS tooling,
+#     integrates with AWS SAM (Serverless Application Model).
+#   - Terraform: Multi-cloud projects, teams wanting provider-agnostic IaC,
+#     richer module ecosystem.
+#
+# USAGE (demonstration only):
+#   aws cloudformation deploy \
+#     --template-file cloudformation-template.yaml \
+#     --stack-name talentscope-dev \
+#     --capabilities CAPABILITY_IAM \
+#     --parameter-overrides Environment=dev
+#
+# TO TEAR DOWN:
+#   aws cloudformation delete-stack --stack-name talentscope-dev
+#
+# ==============================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  TalentScope Resume Screening — AWS Infrastructure
+  Defines S3 (resume storage), Lambda (ML ranking), DynamoDB (results),
+  and IAM roles. Demonstration/educational template.
+
+
+# ------------------------------------------------------------------------------
+# PARAMETERS — Configurable values passed at deploy time
+# ------------------------------------------------------------------------------
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Deployment environment
+
+  ProjectName:
+    Type: String
+    Default: talentscope
+    Description: Project name used for resource naming
+
+  LambdaMemorySize:
+    Type: Number
+    Default: 3008
+    MinValue: 512
+    MaxValue: 10240
+    Description: >
+      Lambda memory in MB. More memory = more CPU = faster ML inference.
+      3008 MB is recommended for Sentence Transformer workloads.
+
+  LambdaTimeout:
+    Type: Number
+    Default: 300
+    MinValue: 30
+    MaxValue: 900
+    Description: Lambda timeout in seconds (max 900 = 15 minutes)
+
+
+# ==============================================================================
+# RESOURCES
+# ==============================================================================
+Resources:
+
+  # ============================================================================
+  # 1. S3 BUCKET — Resume File Storage
+  # ============================================================================
+  # Replaces local file uploads. Provides durable, scalable object storage
+  # with event notifications to trigger Lambda on new uploads.
+  ResumeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-resumes-${Environment}'
+
+      # Server-side encryption (AES-256) — all files encrypted at rest
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+      # Versioning — keep history of all uploads for recovery
+      VersioningConfiguration:
+        Status: Enabled
+
+      # Block all public access — resumes must never be public
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+      # Lifecycle rules — archive old resumes to save costs
+      LifecycleConfiguration:
+        Rules:
+          - Id: ArchiveOldResumes
+            Status: Enabled
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 90
+              - StorageClass: GLACIER
+                TransitionInDays: 365
+
+      # Event notification — trigger Lambda when a resume is uploaded
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: 's3:ObjectCreated:*'
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: uploads/
+                  - Name: suffix
+                    Value: .pdf
+            Function: !GetAtt ResumeRankingFunction.Arn
+
+      Tags:
+        - Key: Name
+          Value: TalentScope Resume Storage
+        - Key: Component
+          Value: Storage
+
+  # ============================================================================
+  # 2. LAMBDA FUNCTION — Serverless ML Ranking
+  # ============================================================================
+  # Replaces: Flask dev server (resume-ml/app.py) running locally.
+  # Wraps the resume-ml/ Python code in a serverless execution environment.
+  ResumeRankingFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-resume-ranking-${Environment}'
+      Description: TalentScope ML Resume Ranking — Sentence Transformers + NER
+
+      # --- Deployment ---
+      # DEMO: Using Python runtime with zip package reference.
+      # PRODUCTION: Use PackageType: Image with ECR container
+      # (ML models exceed the 250 MB ZIP deployment limit).
+      Runtime: python3.11
+      Handler: lambda_handler.lambda_handler
+      Code:
+        # PLACEHOLDER: In real deployment, use S3 bucket reference:
+        # S3Bucket: !Sub '${ProjectName}-deployment-artifacts'
+        # S3Key: 'lambda/resume-ml.zip'
+        ZipFile: |
+          # Placeholder — real code comes from resume-ml/ directory
+          # packaged via deploy_lambda.sh or CI/CD pipeline.
+          def lambda_handler(event, context):
+              return {"statusCode": 200, "body": "TalentScope ML API"}
+
+      # --- Resource Configuration ---
+      MemorySize: !Ref LambdaMemorySize
+      Timeout: !Ref LambdaTimeout
+      Role: !GetAtt LambdaExecutionRole.Arn
+
+      # --- Environment Variables ---
+      Environment:
+        Variables:
+          RESUME_BUCKET: !Ref ResumeBucket
+          DYNAMODB_TABLE: !Ref ResultsTable
+          SENTENCE_TRANSFORMERS_HOME: /tmp/models
+          LOG_LEVEL: INFO
+          ENVIRONMENT: !Ref Environment
+
+      Tags:
+        - Key: Name
+          Value: TalentScope Resume Ranking Lambda
+        - Key: Component
+          Value: ML-Pipeline
+
+  # Permission for S3 to invoke the Lambda function
+  S3InvokeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ResumeRankingFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt ResumeBucket.Arn
+
+  # ============================================================================
+  # 3. DYNAMODB TABLE — Parsed Resume Results
+  # ============================================================================
+  # Replaces: In-memory stubs in NestJS backend (results.service.ts)
+  # Stores ranking scores, parsed skills, and candidate data.
+  ResultsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-results-${Environment}'
+
+      # PAY_PER_REQUEST — serverless pricing, no capacity planning
+      BillingMode: PAY_PER_REQUEST
+
+      # Primary key design
+      KeySchema:
+        - AttributeName: request_id
+          KeyType: HASH           # Partition key
+        - AttributeName: timestamp
+          KeyType: RANGE          # Sort key
+
+      AttributeDefinitions:
+        - AttributeName: request_id
+          AttributeType: S        # String
+        - AttributeName: timestamp
+          AttributeType: N        # Number (Unix epoch)
+
+      # TTL — auto-delete records after expiry to save costs
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+      # Point-in-time recovery — restore table to any second in last 35 days
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+      Tags:
+        - Key: Name
+          Value: TalentScope Results Table
+        - Key: Component
+          Value: Database
+
+  # ============================================================================
+  # 4. IAM ROLE — Lambda Execution Permissions
+  # ============================================================================
+  # Follows least-privilege: Lambda can ONLY access its own S3 bucket,
+  # DynamoDB table, and CloudWatch Logs. Nothing else.
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-lambda-role-${Environment}'
+
+      # Trust policy — only Lambda can assume this role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+
+      # Managed policy for CloudWatch Logs (basic Lambda execution)
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+      # Inline policies for S3 and DynamoDB access
+      Policies:
+        # S3 Read — download resumes
+        - PolicyName: S3ReadAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ResumeBucket.Arn
+                  - !Sub '${ResumeBucket.Arn}/*'
+
+        # DynamoDB Write — store ranking results
+        - PolicyName: DynamoDBWriteAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt ResultsTable.Arn
+                  - !Sub '${ResultsTable.Arn}/index/*'
+
+      Tags:
+        - Key: Name
+          Value: TalentScope Lambda Execution Role
+        - Key: Component
+          Value: Security
+
+
+# ==============================================================================
+# OUTPUTS — Values available after stack creation
+# ==============================================================================
+Outputs:
+  ResumeBucketName:
+    Description: S3 bucket for resume uploads
+    Value: !Ref ResumeBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ResumeBucket'
+
+  LambdaFunctionName:
+    Description: Lambda function name for resume ranking
+    Value: !Ref ResumeRankingFunction
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaFunction'
+
+  LambdaFunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt ResumeRankingFunction.Arn
+
+  DynamoDBTableName:
+    Description: DynamoDB table for results storage
+    Value: !Ref ResultsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-ResultsTable'

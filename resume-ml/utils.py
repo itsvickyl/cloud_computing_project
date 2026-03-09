@@ -1,3 +1,34 @@
+"""
+utils.py — Shared Utilities (Logging, Validation, Text Processing)
+===================================================================
+
+CLOUD / SERVERLESS DESIGN NOTES:
+---------------------------------
+
+1. LOGGING → CLOUDWATCH INTEGRATION:
+   - The logging setup below uses StreamHandler (stdout/stderr).
+   - In AWS Lambda, stdout/stderr is AUTOMATICALLY captured by CloudWatch Logs
+     — no additional configuration, no file handlers, no log rotation needed.
+   - This is one of the key advantages of serverless: logging infrastructure
+     is fully managed. You just `logger.info(...)` and it appears in CloudWatch.
+   - For structured logging in production, consider using JSON log format:
+       import json
+       logger.info(json.dumps({"event": "resume_processed", "resume_id": 42}))
+     This enables CloudWatch Insights queries for analytics and debugging.
+
+2. VALIDATION AT THE EDGE:
+   - validate_request() runs at the very start of the Lambda handler, BEFORE
+     any expensive ML inference. This is the "fail fast" pattern — reject
+     invalid requests before consuming compute resources.
+   - In a pay-per-use model, this directly saves money: a rejected request
+     costs ~1ms of compute vs. ~5 seconds for a full ranking pipeline.
+
+3. PURE UTILITY FUNCTIONS:
+   - clean_text(), extract_years_of_experience(), and the format_*_response()
+     functions are all stateless, pure transforms.
+   - They can be unit-tested in isolation and run identically in any environment
+     (local dev, Docker, Lambda, Cloud Run, GKE).
+"""
 
 import logging
 import re
@@ -5,10 +36,22 @@ from typing import List, Dict, Any
 from config import MAX_RESUMES_PER_REQUEST
 
 # Setup logging
+# CLOUD NOTE: In AWS Lambda, this StreamHandler writes to stdout, which Lambda
+# automatically forwards to CloudWatch Logs. No file handlers needed — Lambda's
+# filesystem is read-only (except /tmp). This setup works identically in
+# local development, Docker, and Lambda without any code changes.
 
 
 def setup_logging():
+    """
+    Configure application logging.
 
+    SERVERLESS NOTE: Lambda provides its own root logger; this setup adds a
+    named logger with a custom format. In production, consider:
+    - Setting level from env var: level=os.environ.get('LOG_LEVEL', 'INFO')
+    - Using JSON format for CloudWatch Insights structured queries
+    - Adding request_id from Lambda context for per-invocation log correlation
+    """
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -23,7 +66,15 @@ logger = setup_logging()
 
 
 def validate_request(data: Dict[str, Any]) -> tuple[bool, str]:
+    """
+    Validate incoming request data before processing.
 
+    CLOUD NOTE (FAIL-FAST PATTERN):
+    This runs at the very start of the Lambda handler, BEFORE any ML inference.
+    Invalid requests are rejected in ~1ms instead of consuming 5+ seconds of
+    compute for parsing + embedding + ranking. In pay-per-use billing, this
+    pattern directly reduces costs for malformed or abusive requests.
+    """
     if not data:
         return False, "Request body is empty"
 
@@ -47,6 +98,9 @@ def validate_request(data: Dict[str, Any]) -> tuple[bool, str]:
     if len(resumes) == 0:
         return False, "No resumes provided"
 
+    # CLOUD NOTE: This max-resumes limit also serves as a guardrail against
+    # Lambda timeout. At ~300ms per resume, 50 resumes ≈ 15s processing time,
+    # well within Lambda's 15-minute max timeout.
     if len(resumes) > MAX_RESUMES_PER_REQUEST:
         return False, f"Too many resumes (maximum {MAX_RESUMES_PER_REQUEST})"
 
@@ -65,7 +119,12 @@ def validate_request(data: Dict[str, Any]) -> tuple[bool, str]:
 
 
 def clean_text(text: str) -> str:
+    """
+    Normalize text by removing extra whitespace and special characters.
 
+    CLOUD NOTE: Pure string transform — runs in microseconds, no external
+    dependencies. Identical behavior in Lambda, Cloud Run, or local dev.
+    """
     if not text:
         return ""
 
@@ -79,7 +138,14 @@ def clean_text(text: str) -> str:
 
 
 def extract_years_of_experience(text: str) -> float:
+    """
+    Extract years of experience from resume text using regex patterns.
 
+    CLOUD NOTE: This is a pure regex-based extraction — no ML inference.
+    It completes in microseconds, contributing negligible cost in a
+    pay-per-use model. The date-range calculation uses datetime for the
+    current year, which works identically across all deployment environments.
+    """
     patterns = [
         r'(\d+)\+?\s*years?\s+of\s+experience',
         r'(\d+)\+?\s*yrs?\s+experience',
@@ -125,7 +191,13 @@ def extract_years_of_experience(text: str) -> float:
 
 
 def format_error_response(error_message: str, status_code: int = 400) -> tuple:
+    """
+    Format a standardized error response.
 
+    CLOUD NOTE: In Lambda, this dict is serialized to JSON and returned with
+    the appropriate HTTP status code. The consistent format enables API Gateway
+    to apply response mapping templates and CloudWatch alarms on error rates.
+    """
     return {
         "error": error_message,
         "success": False
@@ -133,7 +205,14 @@ def format_error_response(error_message: str, status_code: int = 400) -> tuple:
 
 
 def format_success_response(ranked_resumes: List[Dict], total_processed: int) -> Dict:
+    """
+    Format a standardized success response with ranked results.
 
+    CLOUD NOTE: This response format is returned by the Lambda handler to
+    API Gateway, which forwards it to the frontend. The structure is designed
+    to be JSON-serializable with no circular references or non-serializable
+    types — a requirement for Lambda responses.
+    """
     return {
         "success": True,
         "total_resumes_processed": total_processed,
