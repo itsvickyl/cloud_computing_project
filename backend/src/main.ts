@@ -11,14 +11,16 @@ async function bootstrap() {
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
   app.use(cookieParser());
 
-  const allowedOriginString = process.env.CORS_ORIGINS || '';
-  const allowedOrigins = allowedOriginString.split(',').filter(Boolean);
-
   app.enableCors({
-    origin: allowedOrigins,
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    origin: ['http://localhost:3000'],
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
+    allowedHeaders: 'Content-Type, Authorization, Accept',
   });
-  await app.listen(process.env.PORT ?? 5000, '0.0.0.0');
+
+  const port = process.env.PORT ?? 5000;
+  await app.listen(port, '0.0.0.0');
+  console.log(`🚀 Backend is running on: http://localhost:${port}`);
 }
+
 bootstrap();

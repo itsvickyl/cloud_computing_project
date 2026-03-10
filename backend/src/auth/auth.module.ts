@@ -8,6 +8,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
+import { FirebaseService } from './firebase.service';
+
 @Module({
   imports: [
     PassportModule,
@@ -22,7 +24,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       inject: [ConfigService],
     }),
   ],
-  providers: [AuthService, GoogleOAuth2Strategy, JwtStrategy],
+  providers: [AuthService, GoogleOAuth2Strategy, JwtStrategy, FirebaseService],
   controllers: [AuthController],
 })
-export class AuthModule {}
+
+export class AuthModule { }

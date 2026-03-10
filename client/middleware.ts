@@ -48,15 +48,10 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const token = req.cookies.get(process.env.AUTH_COOKIE_TOKEN_NAME || "");
-
-  // const token = await getToken({
-  //   req,
-  //   secret: process.env.AUTH_SECRET,
-  //   secureCookie: process.env.NODE_ENV === "production",
-  // });
+  const token = req.cookies.get(process.env.NEXT_PUBLIC_AUTH_COOKIE_TOKEN_NAME || "");
 
   if (!token && needsAuth) {
+
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirect", pathname);

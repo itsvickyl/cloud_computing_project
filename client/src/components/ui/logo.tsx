@@ -42,7 +42,7 @@ export function Logo({
 
   const logoContent = (
     <div className={cn("flex items-center", sizes.gap, className)}>
-      {/* Modern Geometric Icon */}
+      {/* Modern TalentScope Icon */}
       <div className={cn("relative", sizes.icon)}>
         <svg
           viewBox="0 0 100 100"
@@ -50,7 +50,6 @@ export function Logo({
           xmlns="http://www.w3.org/2000/svg"
           className="w-full h-full"
         >
-          {/* Background gradient circle */}
           <defs>
             <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" className="[stop-color:hsl(var(--primary))]" />
@@ -62,39 +61,33 @@ export function Logo({
             </linearGradient>
           </defs>
 
-          {/* Main background circle */}
-          <circle cx="50" cy="50" r="48" fill="url(#logoGradient)" />
+          {/* Rounded square background */}
+          <rect x="2" y="2" width="96" height="96" rx="22" fill="url(#logoGradient)" />
 
-          {/* Abstract "K" shape with geometric design */}
-          <g transform="translate(50, 50)">
-            {/* Vertical line of K */}
-            <rect x="-20" y="-25" width="8" height="50" fill="white" rx="2" />
+          {/* "T" letter */}
+          <rect x="18" y="28" width="30" height="6" rx="2" fill="white" />
+          <rect x="30" y="28" width="6" height="44" rx="2" fill="white" />
 
-            {/* Upper diagonal of K - representing upward growth */}
-            <path
-              d="M -12 0 L 12 -25 L 20 -20 L -4 5 Z"
-              fill="white"
-            />
+          {/* "S" letter with accent gradient */}
+          <path
+            d="M72 34c0-4.5-4-8-10-8s-10 3.5-10 8c0 4.5 4.5 6.5 10 8.5s10 4 10 8.5c0 4.5-4 8-10 8s-10-3.5-10-8"
+            stroke="url(#accentGradient)"
+            strokeWidth="6"
+            strokeLinecap="round"
+            fill="none"
+          />
 
-            {/* Lower diagonal of K - with AI accent */}
-            <path
-              d="M -12 0 L 12 25 L 20 20 L -4 -5 Z"
-              fill="url(#accentGradient)"
-            />
-
-            {/* Small accent dot representing AI */}
-            <circle cx="18" cy="22" r="3" fill="white" opacity="0.9" />
-          </g>
-
-          {/* Subtle outer ring for depth */}
-          <circle
-            cx="50"
-            cy="50"
-            r="46"
+          {/* Subtle inner border for depth */}
+          <rect
+            x="5"
+            y="5"
+            width="90"
+            height="90"
+            rx="19"
             fill="none"
             stroke="white"
             strokeWidth="1"
-            opacity="0.2"
+            opacity="0.15"
           />
         </svg>
       </div>

@@ -16,17 +16,18 @@ export class AuthService {
   constructor(
     private userService: UsersService,
     private jwtService: JwtService,
-  ) {}
+  ) { }
 
   async signIn(email: string, pass: string) {
     const user = await this.userService.findByEmail(email);
-    if (!user) {
-      throw new NotFoundException();
+    if (!user || !user.password) {
+      throw new UnauthorizedException('Authentication failed.');
     }
     const match = await bcrypt.compare(pass, user.password);
     if (!match) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Authentication failed.');
     }
+
     return user;
   }
 

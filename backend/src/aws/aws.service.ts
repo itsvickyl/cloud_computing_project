@@ -69,7 +69,7 @@ export class AwsService {
       Payload: JSON.stringify({
         job_description,
         top_k: applicants_number,
-        s3_bucke: this.configService.get<string>('aws.bucketName') || 'talentscope',
+        s3_bucket: this.configService.get<string>('aws.bucketName') || 'talentscope',
       }),
     });
 

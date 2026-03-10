@@ -190,7 +190,7 @@ def extract_years_of_experience(text: str) -> float:
     return 0.0
 
 
-def format_error_response(error_message: str, status_code: int = 400) -> tuple:
+def format_error_response(error_message: str) -> dict:
     """
     Format a standardized error response.
 
@@ -201,7 +201,7 @@ def format_error_response(error_message: str, status_code: int = 400) -> tuple:
     return {
         "error": error_message,
         "success": False
-    }, status_code
+    }
 
 
 def format_success_response(ranked_resumes: List[Dict], total_processed: int) -> Dict:

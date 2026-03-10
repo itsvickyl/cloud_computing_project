@@ -115,14 +115,14 @@ Processes all resumes stored in the configured S3 bucket.
 ```json
 {
   "job_description": "Looking for a Full Stack Developer with React, Node.js, and AWS experience",
-  "s3_bucket": "kaam-ai", // Optional if configured in env vars
+  "s3_bucket": "talentscope", // Optional if configured in env vars
   "top_k": 10
 }
 ```
 
 **How it works:**
 
-1. The Lambda function lists all PDF/DOCX files in the `kaam-ai` bucket.
+1. The Lambda function lists all PDF/DOCX files in the `talentscope` bucket.
 2. It downloads and extracts text from each resume.
 3. It compares them against the `job_description` using the AI model.
 4. It returns the ranked list of candidates.

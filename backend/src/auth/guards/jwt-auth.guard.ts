@@ -8,7 +8,7 @@ export class JWTAuthGuard extends AuthGuard('jwt') {
     const request: Request = context.switchToHttp().getRequest();
 
     const token =
-      request.cookies[process.env.COOKIE_NAME || 'talentscope-auth-token'];
+      request.cookies[process.env.COOKIE_NAME || 'talentscope_token'];
 
     if (token) {
       request.headers.authorization = `Bearer ${token}`;

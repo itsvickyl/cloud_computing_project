@@ -23,7 +23,7 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
-        hostname: "kaam-ai.s3.us-east-1.amazonaws.com",
+        hostname: "*.s3.*.amazonaws.com",
       },
     ],
     minimumCacheTTL: 31536000,
@@ -51,8 +51,8 @@ const nextConfig: NextConfig = {
     removeConsole:
       process.env.NODE_ENV === "production"
         ? {
-            exclude: ["error", "warn"],
-          }
+          exclude: ["error", "warn"],
+        }
         : false,
   },
 
@@ -65,17 +65,18 @@ const nextConfig: NextConfig = {
 
     const cspDirectives = [
       `default-src 'self'`,
-      `script-src 'self' ${isDev ? "'unsafe-eval'" : ""} 'unsafe-inline'`,
-      `style-src 'self' 'unsafe-inline'`,
-      `img-src 'self' data: blob: https://images.unsplash.com https://lh3.googleusercontent.com https://avatars.githubusercontent.com https://*.google.com https://*.gstatic.com`,
-      `font-src 'self' data:`,
-      `connect-src 'self' ${process.env.NEXT_PUBLIC_BACKEND_URL} http://localhost:5000 https://*.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com`,
-      `frame-src 'self'`,
+      `script-src 'self' ${isDev ? "'unsafe-eval'" : ""} 'unsafe-inline' https://apis.google.com https://*.firebaseapp.com https://*.google.com`,
+      `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
+      `img-src 'self' data: blob: https://images.unsplash.com https://lh3.googleusercontent.com https://avatars.githubusercontent.com https://*.google.com https://*.gstatic.com https://*.googleusercontent.com`,
+      `font-src 'self' data: https://fonts.gstatic.com`,
+      `connect-src 'self' ${process.env.NEXT_PUBLIC_BACKEND_URL} http://localhost:5000 https://*.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://*.firebaseapp.com`,
+      `frame-src 'self' https://*.firebaseapp.com https://*.google.com`,
       `object-src 'none'`,
       `base-uri 'self'`,
       `form-action 'self'`,
       `frame-ancestors 'none'`,
     ];
+
 
     return [
       {

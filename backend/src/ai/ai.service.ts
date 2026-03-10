@@ -15,7 +15,7 @@ export class AiService {
 
     return new Promise((resolve, reject) => {
       const pythonProcess = spawn(
-        'e:\\masters-classes\\dcc-classes\\cloud-based-ai-resume-screening\\.venv\\Scripts\\python.exe',
+        'python',
         [scriptPath, inputArg],
       );
 

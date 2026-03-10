@@ -14,12 +14,46 @@ import { User } from 'src/users/entities/user.entity';
 import { Request, Response } from 'express';
 import { isPasswordStrong } from './utils/pass.util';
 
+import { FirebaseService } from './firebase.service';
+
 @Controller('auth')
 export class AuthController {
   constructor(
     private authService: AuthService,
     private configService: ConfigService,
-  ) {}
+    private firebaseService: FirebaseService,
+  ) { }
+
+  @Post('firebase')
+  async firebaseAuth(
+    @Res() res: Response,
+    @Body('idToken') idToken: string,
+    @Body('username') customUsername?: string,
+    @Body('type') customType?: string,
+  ) {
+    try {
+      const decodedToken = await this.firebaseService.verifyIdToken(idToken);
+      const user = await this.authService.validateUser({
+        email: decodedToken.email,
+        username: customUsername || decodedToken.name || decodedToken.email?.split('@')[0],
+        profilePic: decodedToken.picture || `https://api.dicebear.com/9.x/initials/svg?seed=${decodedToken.email}`,
+        type: (customType as any) || 'user',
+      });
+
+      const token = await this.authService.generateToken(user.user as User);
+
+      return res.json({
+        message: 'Login successful',
+        token,
+        isNew: user.isNew,
+      });
+    } catch (error) {
+      console.error('Firebase Auth Error:', error);
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+  }
+
+
 
   @Post('login')
   async signIn(
@@ -61,7 +95,7 @@ export class AuthController {
 
   @Get('google')
   @UseGuards(GoogleOAuthGuard)
-  async googleAuth() {}
+  async googleAuth() { }
 
   @Get('google/redirect')
   @UseGuards(GoogleOAuthGuard)

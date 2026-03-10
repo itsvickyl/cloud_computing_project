@@ -11,6 +11,8 @@ import { User } from "@/types";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
+import { env } from "@/config/env";
+
 const LoginForm = () => {
   const searchParams = useSearchParams();
   const [error, setError] = useState("");
@@ -19,7 +21,7 @@ const LoginForm = () => {
   const { mutateAsync, isPending } = useMutation({
     mutationKey: ["login"],
     mutationFn: async (user: Pick<User, "email" | "password">) => {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/login`, {
+      const res = await fetch(`${env.NEXT_PUBLIC_BACKEND_URL}/auth/login`, {
         method: "POST",
         body: JSON.stringify({
           email: user.email,
@@ -174,14 +176,35 @@ const LoginForm = () => {
           <p className="my-4">OR</p>
           <div className="flex flex-col gap-3">
             <button
-              onClick={() => {
-                window.location.href = `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/google?redirectTo=${encodeURIComponent(redirectTo)}`;
+              onClick={async () => {
+                const { auth, googleProvider } = await import("@/lib/firebase");
+                const { signInWithPopup } = await import("firebase/auth");
+                try {
+                  const result = await signInWithPopup(auth, googleProvider);
+                  const idToken = await result.user.getIdToken();
+                  const res = await fetch(`${env.NEXT_PUBLIC_BACKEND_URL}/auth/firebase`, {
+
+                    method: "POST",
+                    body: JSON.stringify({ idToken }),
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                  });
+                  const data = await res.json();
+                  if (data && data.token) {
+                    window.location.href = `/auth/callback?token=${data.token}&redirectTo=${encodeURIComponent(redirectTo)}`;
+                  }
+                } catch (err: any) {
+                  console.error(err);
+                  setError(err.message);
+                }
               }}
               className="group w-full flex items-center justify-center gap-3 px-5 py-3.5 border-2 border-border/50 rounded-xl hover:border-primary/50 hover:bg-primary/5 transition-all duration-200 font-medium"
             >
               <Google className="size-5 group-hover:scale-110 transition-transform duration-200" />
               <span>Continue with Google</span>
             </button>
+
           </div>
         </CardContent>
       </Card>

@@ -144,7 +144,7 @@ def rank_resumes_endpoint():
         is_valid, error_message = validate_request(data)
         if not is_valid:
             logger.warning(f"Invalid request: {error_message}")
-            return jsonify(format_error_response(error_message))
+            return jsonify(format_error_response(error_message)), 400
 
         # Extract parameters
         job_description = data['job_description']
@@ -153,7 +153,7 @@ def rank_resumes_endpoint():
 
         # Validate top_k
         if not isinstance(top_k, int) or top_k < 1:
-            return jsonify(format_error_response("'top_k' must be a positive integer"))
+            return jsonify(format_error_response("'top_k' must be a positive integer")), 400
 
         if top_k > len(resumes):
             top_k = len(resumes)
@@ -192,7 +192,7 @@ def rank_resumes_endpoint():
         if not resumes_data:
             return jsonify(format_error_response(
                 "No valid resumes could be processed. Please check file formats and content."
-            ))
+            )), 400
 
         # Rank resumes
         ranked_results = rank_resumes(resumes_data, job_description, top_k)
@@ -217,4 +217,4 @@ def rank_resumes_endpoint():
 
 if __name__ == '__main__':
     logger.info("Starting Resume Ranking API...")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5001)

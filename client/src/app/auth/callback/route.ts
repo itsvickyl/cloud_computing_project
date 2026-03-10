@@ -17,7 +17,8 @@ export async function GET(request: Request) {
     : process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
   (await cookies()).set({
-    name: process.env.AUTH_COOKIE_TOKEN_NAME || "talentscope-auth-token",
+    name: process.env.NEXT_PUBLIC_AUTH_COOKIE_TOKEN_NAME || "talentscope_token",
+
     value: token,
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

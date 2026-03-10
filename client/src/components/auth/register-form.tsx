@@ -1,15 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import { Chrome } from "lucide-react";
-import { redirect, useRouter } from "next/navigation";
 import { ROUTES, getDynamicRoute } from "@/config/routes";
 import { User } from "@/types";
 import { useToast } from "@/hooks/use-toast";
-import { useMutation } from "@tanstack/react-query";
+
 import { Input } from "../ui";
 
 interface RegisterFormProps {
@@ -28,56 +27,20 @@ const RegisterForm = ({ searchParams }: RegisterFormProps) => {
   const [formData, setFormData] = useState<RegisterUser>({
     email: "",
     password: "",
+    username: "",
   });
   const [errors, setErrors] = useState<Partial<RegisterUser>>({});
   const { toast } = useToast();
-  const router = useRouter();
+  const [isPending, setIsPending] = useState(false);
 
   const redirectTo = searchParams?.redirect || ROUTES.HOME;
   const isNewUser = searchParams?.new === "true";
 
-  const { mutateAsync, isPending } = useMutation({
-    mutationKey: ["register"],
-    mutationFn: async (user: RegisterUser) => {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/register`, {
-        method: "POST",
-        body: JSON.stringify({
-          ...user,
-          type: userType,
-        }),
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-      });
-      const data = await res.json();
-      return data;
-    },
-    onSuccess(data) {
-      if (data && data.statusCode === 409) {
-        setErrors({
-          email: "Email already registered",
-        });
-      }
-
-      if (data && data.message === "Password weak") {
-        setErrors({
-          password:
-            "Password must be atleast 8 characters, have atleast one number, one special character and one capital letter",
-        });
-      }
-
-      if (data && data.message === "Registered successfully") {
-        redirect(`/auth/callback?token=${data.token}&redirectTo=/onboarding`);
-      }
-    },
-    onError(error) {
-      console.error(error);
-    },
-  });
-
   const validateForm = (): boolean => {
     const newErrors: Partial<RegisterUser> = {};
+    if (!formData.email) newErrors.email = "Email is required";
+    if (!formData.username) newErrors.username = "Username is required";
+    if (!formData.password) newErrors.password = "Password is required";
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -94,8 +57,48 @@ const RegisterForm = ({ searchParams }: RegisterFormProps) => {
       });
       return;
     }
+    setIsPending(true);
+    const { auth } = await import("@/lib/firebase");
+    const { createUserWithEmailAndPassword } = await import("firebase/auth");
 
-    await mutateAsync(formData);
+    try {
+      // 1. Create user in Firebase
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        formData.email,
+        formData.password
+      );
+
+      // 2. Get the ID Token
+      const idToken = await userCredential.user.getIdToken();
+
+      // 3. Send to backend to create internal record
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/firebase`, {
+        method: "POST",
+        body: JSON.stringify({
+          idToken,
+          username: formData.username,
+          type: userType,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await res.json();
+      if (data && data.token) {
+        window.location.href = `/auth/callback?token=${data.token}&redirectTo=/onboarding`;
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast({
+        title: "Registration Error",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsPending(false);
+    }
   };
 
   const handleInputChange = (field: keyof RegisterUser, value: string) => {
@@ -112,10 +115,40 @@ const RegisterForm = ({ searchParams }: RegisterFormProps) => {
     }
   };
 
-  useEffect(() => {}, [redirectTo, router, isNewUser]);
+  const handleGoogleSignIn = async () => {
+    if (!userType) {
+      toast({
+        title: "Selection Required",
+        description: "Please select if you are a Job Seeker or Recruiter first.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-  const handleGoogleSignIn = () => {
-    window.location.href = `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/google?userType=${userType}&redirectTo=/onboarding`;
+    const { auth, googleProvider } = await import("@/lib/firebase");
+    const { signInWithPopup } = await import("firebase/auth");
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const idToken = await result.user.getIdToken();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/firebase`, {
+        method: "POST",
+        body: JSON.stringify({ idToken, type: userType }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      const data = await res.json();
+      if (data && data.token) {
+        window.location.href = `/auth/callback?token=${data.token}&redirectTo=/onboarding`;
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast({
+        title: "Authentication Error",
+        description: err.message,
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -136,11 +169,11 @@ const RegisterForm = ({ searchParams }: RegisterFormProps) => {
         <div className="grid grid-cols-2 gap-4">
           <button
             onClick={() => setUserType("user")}
-            className={`group flex flex-col items-center justify-center gap-2.5 p-5 rounded-xl border-2 transition-all duration-200 ${
-              userType === "user"
-                ? "border-primary bg-primary/10 shadow-lg shadow-primary/5 scale-[1.02]"
-                : "border-border/50 hover:border-primary/50 hover:bg-primary/5"
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            type="button"
+            className={`group flex flex-col items-center justify-center gap-2.5 p-5 rounded-xl border-2 transition-all duration-200 ${userType === "user"
+              ? "border-primary bg-primary/10 shadow-lg shadow-primary/5 scale-[1.02]"
+              : "border-border/50 hover:border-primary/50 hover:bg-primary/5"
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             <span className="text-3xl group-hover:scale-110 transition-transform duration-200">
               👤
@@ -152,11 +185,11 @@ const RegisterForm = ({ searchParams }: RegisterFormProps) => {
           </button>
           <button
             onClick={() => setUserType("org")}
-            className={`group flex flex-col items-center justify-center gap-2.5 p-5 rounded-xl border-2 transition-all duration-200 ${
-              userType === "org"
-                ? "border-primary bg-primary/10 shadow-lg shadow-primary/5 scale-[1.02]"
-                : "border-border/50 hover:border-primary/50 hover:bg-primary/5"
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            type="button"
+            className={`group flex flex-col items-center justify-center gap-2.5 p-5 rounded-xl border-2 transition-all duration-200 ${userType === "org"
+              ? "border-primary bg-primary/10 shadow-lg shadow-primary/5 scale-[1.02]"
+              : "border-border/50 hover:border-primary/50 hover:bg-primary/5"
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             <span className="text-3xl group-hover:scale-110 transition-transform duration-200">
               🏢
@@ -202,6 +235,7 @@ const RegisterForm = ({ searchParams }: RegisterFormProps) => {
           <Label htmlFor="password">Password</Label>
           <Input
             id="password"
+            value={formData.password}
             onChange={(e) => handleInputChange("password", e.target.value)}
             placeholder="Enter your password"
             type="password"
@@ -216,12 +250,13 @@ const RegisterForm = ({ searchParams }: RegisterFormProps) => {
         </Button>
       </form>
 
-      <p className="my-4">OR</p>
+      <p className="my-4 text-center">OR</p>
 
       <div className="space-y-3 pt-2">
         <Button
           onClick={handleGoogleSignIn}
           disabled={!userType}
+          type="button"
           variant="outline"
           className="w-full border-2 border-border/50 hover:border-primary/50 hover:bg-primary/5 py-6 rounded-xl font-medium transition-all duration-200"
           size="lg"

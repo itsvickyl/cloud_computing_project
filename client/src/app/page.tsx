@@ -33,7 +33,7 @@ export default async function PublicJobListings({ searchParams }: SearchParams) 
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/users/profile`, {
         headers: {
-          Cookie: `${process.env.AUTH_COOKIE_TOKEN_NAME || "talentscope-auth-token"}=${authToken}`,
+          Cookie: `${process.env.NEXT_PUBLIC_AUTH_COOKIE_TOKEN_NAME || "talentscope_token"}=${authToken}`,
         },
       });
       const data = await res.json();
